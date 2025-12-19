@@ -1,0 +1,66 @@
+{
+  "_note1": "KEEP THIS FILE! Check it into a version control system (VCS) like git.",
+  "_note2": "ObjectBox manages crucial IDs for your object model. See docs for details.",
+  "_note3": "If you have VCS merge conflicts, you must resolve them according to ObjectBox docs.",
+  "entities": [
+    {
+      "id": "1:3579691805702716355",
+      "lastPropertyId": "7:745027724350617881",
+      "name": "NoteEntity",
+      "properties": [
+        {
+          "id": "1:7740950898421921509",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:2681686332128003528",
+          "name": "title",
+          "type": 9
+        },
+        {
+          "id": "3:8653188288190202432",
+          "name": "imagePath",
+          "type": 9
+        },
+        {
+          "id": "4:4750546941060719747",
+          "name": "timestamp",
+          "type": 6
+        },
+        {
+          "id": "5:9023348713870246906",
+          "name": "embedding",
+          "indexId": "1:3727349269639586099",
+          "type": 28,
+          "flags": 8
+        },
+        {
+          "id": "6:6530247521748312282",
+          "name": "ocrText",
+          "type": 9
+        },
+        {
+          "id": "7:745027724350617881",
+          "name": "textEmbedding",
+          "indexId": "2:5319337271160766909",
+          "type": 28,
+          "flags": 8
+        }
+      ],
+      "relations": []
+    }
+  ],
+  "lastEntityId": "1:3579691805702716355",
+  "lastIndexId": "2:5319337271160766909",
+  "lastRelationId": "0:0",
+  "lastSequenceId": "0:0",
+  "modelVersion": 5,
+  "modelVersionParserMinimum": 5,
+  "retiredEntityUids": [],
+  "retiredIndexUids": [],
+  "retiredPropertyUids": [],
+  "retiredRelationUids": [],
+  "version": 1
+}
