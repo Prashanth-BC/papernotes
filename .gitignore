@@ -88,7 +88,3 @@ emulator_photos/
 
 # Heap dumps
 *.hprof
-
-# Large ML model files
-app/src/main/assets/all_minilm_l6_v2.tflite
-app/src/main/assets/all_minilm_l6_v2_quant.tflite
