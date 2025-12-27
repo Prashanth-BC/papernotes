@@ -1,5 +1,6 @@
 package com.example.notes.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -32,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import com.example.notes.data.NoteEntity
 import com.example.notes.data.ObjectBoxStore
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
@@ -64,19 +66,21 @@ fun HomeScreen() {
     }
     
     // Apply preference on start
-    LaunchedEffect(useGpu) {
-        val delegate = if (useGpu) ImageEmbedderHelper.DELEGATE_GPU else ImageEmbedderHelper.DELEGATE_CPU
-        scannerManager.updateEmbedderDelegate(delegate)
-    }
+    // Note: GPU delegate switching is handled during ImageEmbedderHelper initialization
+    // LaunchedEffect(useGpu) {
+    //     scannerManager.updateEmbedderDelegate(if (useGpu) 1 else 0)
+    // }
 
     // Popup state
     var showSettings by remember { mutableStateOf(false) }
     var showSearchResults by remember { mutableStateOf(false) }
     var searchResults by remember { mutableStateOf(emptyList<ScannerManager.SearchResult>()) }
-    
-    // Processing progress state
-    var processingState by remember { mutableStateOf<ScannerManager.ProcessingState?>(null) }
-    var showProcessingDialog by remember { mutableStateOf(false) }
+    var isSearching by remember { mutableStateOf(false) }
+
+    // Progress state
+    var showProgress by remember { mutableStateOf(false) }
+    var processingState by remember { mutableStateOf(ScannerManager.ProcessingState()) }
+    var progressTitle by remember { mutableStateOf("Processing") }
     
     // Simplified way to get notes and unique collections
     fun refreshNotes() {
@@ -121,10 +125,16 @@ fun HomeScreen() {
     }
 
     var isSearchMode by remember { mutableStateOf(false) }
-    
+
     // Selection Mode State
     var isSelectionMode by remember { mutableStateOf(false) }
     var selectedNoteIds by remember { mutableStateOf(setOf<Long>()) }
+
+    // Back button handler for search results
+    BackHandler(enabled = showSearchResults) {
+        showSearchResults = false
+        isSearching = false
+    }
 
     fun toggleSelection(noteId: Long) {
         val newSelection = selectedNoteIds.toMutableSet()
@@ -162,34 +172,33 @@ fun HomeScreen() {
                     val uri = pages[0].imageUri
                     
                     if (isSearchMode) {
-                        showProcessingDialog = true
+                        // Search mode
                         scope.launch {
+                            isSearching = true
+                            showSearchResults = true
+                            showProgress = true
+                            progressTitle = "Searching Notes"
+                            searchResults = emptyList()
+
                             scannerManager.search(
                                 uri = uri,
                                 onProgress = { state ->
                                     processingState = state
-                                    if (state.step == ScannerManager.ProcessingStep.COMPLETE ||
-                                        state.step == ScannerManager.ProcessingStep.ERROR) {
-                                        scope.launch {
-                                            kotlinx.coroutines.delay(500) // Brief delay to show completion
-                                            showProcessingDialog = false
-                                        }
-                                    }
                                 },
                                 onComplete = { results ->
                                     searchResults = results
-                                    showSearchResults = true
+                                    isSearching = false
+                                    showProgress = false
                                 }
                             )
                         }
                     } else {
                         // Handle Add Note with Smart Collection Logic
                         val targetCollection = selectedCollection ?: "Scratchpad"
-                        
+
                         // Check for duplicates in target collection
-                        val inputStream = context.contentResolver.openInputStream(uri)
-                        val bitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
-                        
+                        val bitmap = com.example.notes.ml.ImagePreprocessor.loadBitmapFromUri(context, uri)
+
                         scope.launch {
                              val similar = scannerManager.findSimilarInCollection(bitmap, targetCollection)
                              if (similar != null) {
@@ -198,25 +207,22 @@ fun HomeScreen() {
                                  pendingScanUri = uri
                                  showDuplicateDialog = true
                              } else {
-                                 // No duplicate, save directly
-                                 showProcessingDialog = true
+                                 // No duplicate, show progress and save
+                                 showProgress = true
+                                 progressTitle = "Adding Note"
+
                                  scannerManager.processScanResult(
                                      uri = uri,
                                      onProgress = { state ->
                                          processingState = state
-                                         if (state.step == ScannerManager.ProcessingStep.COMPLETE ||
-                                             state.step == ScannerManager.ProcessingStep.ERROR) {
-                                             scope.launch {
-                                                 kotlinx.coroutines.delay(500) // Brief delay to show completion
-                                                 showProcessingDialog = false
-                                             }
-                                         }
                                      },
+                                     onWaitingForConfirmation = { },
                                      onComplete = { newNote ->
                                           val box = ObjectBoxStore.store.boxFor(NoteEntity::class.java)
                                           newNote.collection = targetCollection
                                           box.put(newNote)
                                           refreshNotes()
+                                          showProgress = false
                                      }
                                  )
                              }
@@ -227,114 +233,7 @@ fun HomeScreen() {
         }
     }
 
-    // Processing progress dialog
-    if (showProcessingDialog && processingState != null) {
-        AlertDialog(
-            onDismissRequest = { /* Prevent dismissal during processing */ },
-            title = { 
-                Text(
-                    when (processingState!!.step) {
-                        ScannerManager.ProcessingStep.COMPLETE -> "Complete!"
-                        ScannerManager.ProcessingStep.ERROR -> "Error"
-                        else -> "Processing..."
-                    }
-                )
-            },
-            text = {
-                Column(
-                    horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
-                    modifier = Modifier.padding(16.dp)
-                ) {
-                    if (processingState!!.step != ScannerManager.ProcessingStep.COMPLETE &&
-                        processingState!!.step != ScannerManager.ProcessingStep.ERROR) {
-                        androidx.compose.material3.LinearProgressIndicator(
-                            progress = processingState!!.progress,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                    }
-                    
-                    Text(
-                        text = processingState!!.message,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    
-                    Spacer(modifier = Modifier.height(8.dp))
-                    
-                    // Show detailed step information
-                    Text(
-                        text = when (processingState!!.step) {
-                            ScannerManager.ProcessingStep.LOADING_IMAGE -> "📁 Loading..."
-                            ScannerManager.ProcessingStep.GENERATING_IMAGE_EMBEDDING -> "🖼️ Image → Vector"
-                            ScannerManager.ProcessingStep.RUNNING_OCR -> "👁️ Reading Text"
-                            ScannerManager.ProcessingStep.GENERATING_TEXT_EMBEDDING -> "📝 Text → Vector"
-                            ScannerManager.ProcessingStep.SAVING -> "💾 Saving/Searching"
-                            ScannerManager.ProcessingStep.COMPLETE -> "✅ Done"
-                            ScannerManager.ProcessingStep.ERROR -> "❌ Failed"
-                            else -> ""
-                        },
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    
-                    // Progress percentage
-                    if (processingState!!.step != ScannerManager.ProcessingStep.COMPLETE &&
-                        processingState!!.step != ScannerManager.ProcessingStep.ERROR) {
-                        Text(
-                            text = "${(processingState!!.progress * 100).toInt()}%",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                if (processingState!!.step == ScannerManager.ProcessingStep.COMPLETE ||
-                    processingState!!.step == ScannerManager.ProcessingStep.ERROR) {
-                    TextButton(onClick = { showProcessingDialog = false }) {
-                        Text("OK")
-                    }
-                }
-            }
-        )
-    }
-
-    if (showSearchResults) {
-        AlertDialog(
-            onDismissRequest = { showSearchResults = false },
-            title = { Text("Search Results") },
-            text = {
-                if (searchResults.isEmpty()) {
-                    Text("No matching notes found.")
-                } else {
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(2), // Or just 1 column for dialog
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.heightIn(max = 400.dp) // Limit height
-                    ) {
-                        items(searchResults) { result ->
-                            NoteCard(
-                                result.note, 
-                                score = result.score, 
-                                textScore = result.textScore, 
-                                imageScore = result.imageScore
-                            )
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showSearchResults = false }) {
-                    Text("Close")
-                }
-            }
-        )
-    }
-
-
-
+    // Dialogs that should always be available
     if (selectedNoteForDetails != null) {
         val note = selectedNoteForDetails!!
         AlertDialog(
@@ -379,8 +278,10 @@ fun HomeScreen() {
                     Spacer(modifier = Modifier.height(16.dp))
                     Text("Debug Info:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
                     Text("ID: ${note.id}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-                    Text("Image Embedding: ${if (note.embedding != null) "Yes (${note.embedding!!.size})" else "No"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-                    Text("Text Embedding: ${if (note.textEmbedding != null) "Yes (${note.textEmbedding!!.size})" else "No"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                    Text("Image Embedding: ${if (note.embedding != null) "Yes (${note.embedding!!.size}-dim)" else "No"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                    Text("TrOCR Embedding: ${if (note.trocrEmbedding != null) "Yes (${note.trocrEmbedding!!.size}-dim)" else "No"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                    Text("ML Kit Text Embedding: ${if (note.mlKitTextEmbedding != null) "Yes (${note.mlKitTextEmbedding!!.size}-dim)" else "No"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                    Text("ColorBased Text Embedding: ${if (note.colorBasedTextEmbedding != null) "Yes (${note.colorBasedTextEmbedding!!.size}-dim)" else "No"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                 }
             },
             confirmButton = {
@@ -391,45 +292,123 @@ fun HomeScreen() {
         )
     }
 
-    if (showSettings) {
-        AlertDialog(
-            onDismissRequest = { showSettings = false },
-            title = { Text("Settings") },
-            text = {
-                Column {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth().clickable {
-                             val newValue = !useGpu
-                             useGpu = newValue
-                             prefs.edit { putBoolean("use_gpu", newValue) }
-                        }
-                    ) {
-                        Text("Use GPU (Experimental)", modifier = Modifier.weight(1f))
-                        Switch(
-                            checked = useGpu,
-                            onCheckedChange = { 
-                                useGpu = it
-                                prefs.edit { putBoolean("use_gpu", it) }
-                            }
-                        )
-                    }
-                    Text(
-                        "Enable GPU for faster processing. Disable if app crashes.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showSettings = false }) {
-                    Text("Done")
-                }
-            }
+    // Progress Dialog
+    if (showProgress) {
+        ProcessingProgressDialog(
+            title = progressTitle,
+            state = processingState,
+            onDismiss = { showProgress = false }
         )
     }
 
-    Scaffold(
+    // Main UI (always shown)
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Background main UI
+            if (showSettings) {
+                AlertDialog(
+                    onDismissRequest = { showSettings = false },
+                    title = { Text("Settings") },
+                    text = {
+                        Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                            // GPU Settings
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth().clickable {
+                                     val newValue = !useGpu
+                                     useGpu = newValue
+                                     prefs.edit { putBoolean("use_gpu", newValue) }
+                                }
+                            ) {
+                                Text("Use GPU (Experimental)", modifier = Modifier.weight(1f))
+                                Switch(
+                                    checked = useGpu,
+                                    onCheckedChange = {
+                                        useGpu = it
+                                        prefs.edit { putBoolean("use_gpu", it) }
+                                    }
+                                )
+                            }
+                            Text(
+                                "Enable GPU for faster processing. Disable if app crashes.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            Spacer(modifier = Modifier.height(16.dp))
+                            HorizontalDivider()
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            // Search Threshold Settings
+                            Text(
+                                "Search Thresholds",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                "Lower values = stricter matching (fewer results)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(bottom = 12.dp)
+                            )
+
+                            var clipThreshold by remember {
+                                mutableFloatStateOf(prefs.getFloat("clip_threshold", 0.2f))
+                            }
+                            SettingsSlider(
+                                label = "CLIP Image Threshold",
+                                value = clipThreshold,
+                                onValueChange = {
+                                    clipThreshold = it
+                                    prefs.edit { putFloat("clip_threshold", it) }
+                                }
+                            )
+
+                            var trocrThreshold by remember {
+                                mutableFloatStateOf(prefs.getFloat("trocr_threshold", 0.2f))
+                            }
+                            SettingsSlider(
+                                label = "TrOCR Visual Threshold",
+                                value = trocrThreshold,
+                                onValueChange = {
+                                    trocrThreshold = it
+                                    prefs.edit { putFloat("trocr_threshold", it) }
+                                }
+                            )
+
+                            var mlkitThreshold by remember {
+                                mutableFloatStateOf(prefs.getFloat("mlkit_threshold", 0.2f))
+                            }
+                            SettingsSlider(
+                                label = "ML Kit Text Threshold",
+                                value = mlkitThreshold,
+                                onValueChange = {
+                                    mlkitThreshold = it
+                                    prefs.edit { putFloat("mlkit_threshold", it) }
+                                }
+                            )
+
+                            var colorbasedThreshold by remember {
+                                mutableFloatStateOf(prefs.getFloat("colorbased_threshold", 0.2f))
+                            }
+                            SettingsSlider(
+                                label = "ColorBased Text Threshold",
+                                value = colorbasedThreshold,
+                                onValueChange = {
+                                    colorbasedThreshold = it
+                                    prefs.edit { putFloat("colorbased_threshold", it) }
+                                }
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showSettings = false }) {
+                            Text("Done")
+                        }
+                    }
+                )
+            }
+
+            Scaffold(
         topBar = {
             if (!isSelectionMode) {
                  TopAppBar(
@@ -642,6 +621,29 @@ fun HomeScreen() {
             }
         }
     }
+
+        // Search Results Overlay (3/4 screen height)
+        if (showSearchResults) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.75f)
+                    .align(Alignment.Center)
+            ) {
+                CompactSearchPage(
+                    searchResults = searchResults,
+                    isSearching = isSearching,
+                    onDismiss = {
+                        showSearchResults = false
+                        isSearching = false
+                    },
+                    onThresholdsChanged = { clip, trocr, mlkit, colorbased ->
+                        // Thresholds changed - results are filtered in the UI
+                    }
+                )
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -649,8 +651,10 @@ fun HomeScreen() {
 fun NoteCard(
     note: NoteEntity, 
     score: Double? = null,
-    textScore: Double? = null,
     imageScore: Double? = null,
+    trocrScore: Double? = null,
+    mlKitTextScore: Double? = null,
+    colorBasedTextScore: Double? = null,
     isSelected: Boolean = false,
     onDelete: (() -> Unit)? = null,
     onMoveToCollection: ((String) -> Unit)? = null,
@@ -778,21 +782,37 @@ fun NoteCard(
                 if (score != null) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Match: %.0f%%".format((1.0 - score) * 100),
+                        text = "Overall: %.3f".format(score),
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
                     )
                     
-                    if (textScore != null) {
+                    // Show individual embedding scores (cosine distance: 0.0 = identical, 2.0 = opposite)
+                    if (imageScore != null) {
                         Text(
-                            text = "Text: %.0f%%".format((1.0 - textScore) * 100),
+                            text = "  Image: %.3f".format(imageScore),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.secondary
                         )
                     }
-                    if (imageScore != null) {
+                    if (trocrScore != null) {
                         Text(
-                            text = "Image: %.0f%%".format((1.0 - imageScore) * 100),
+                            text = "  TrOCR: %.3f".format(trocrScore),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                    }
+                    if (mlKitTextScore != null) {
+                        Text(
+                            text = "  ML Kit: %.3f".format(mlKitTextScore),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                    }
+                    if (colorBasedTextScore != null) {
+                        Text(
+                            text = "  ColorOCR: %.3f".format(colorBasedTextScore),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.secondary
                         )
@@ -829,4 +849,111 @@ fun NoteCard(
              }
         }
     }
+}
+
+@Composable
+fun SettingsSlider(
+    label: String,
+    value: Float,
+    onValueChange: (Float) -> Unit
+) {
+    Column(modifier = Modifier.padding(vertical = 8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Text(
+                text = String.format("%.2f", value),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+            )
+        }
+        Slider(
+            value = value,
+            onValueChange = onValueChange,
+            valueRange = 0.05f..0.5f,
+            steps = 44
+        )
+    }
+}
+
+@Composable
+fun ProcessingProgressDialog(
+    title: String,
+    state: ScannerManager.ProcessingState,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = {
+            if (state.step == ScannerManager.ProcessingStep.COMPLETE ||
+                state.step == ScannerManager.ProcessingStep.ERROR) {
+                onDismiss()
+            }
+        },
+        title = { Text(title) },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                // Progress indicator
+                LinearProgressIndicator(
+                    progress = { state.progress },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp)
+                )
+
+                // Progress percentage
+                Text(
+                    text = "${(state.progress * 100).toInt()}%",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Current step
+                Text(
+                    text = when (state.step) {
+                        ScannerManager.ProcessingStep.IDLE -> "Idle"
+                        ScannerManager.ProcessingStep.LOADING_IMAGE -> "Loading Image"
+                        ScannerManager.ProcessingStep.GENERATING_IMAGE_EMBEDDING -> "Generating Image Embeddings"
+                        ScannerManager.ProcessingStep.GENERATING_TROCR_EMBEDDING -> "Generating Visual Embeddings"
+                        ScannerManager.ProcessingStep.RUNNING_OCR -> "Running OCR"
+                        ScannerManager.ProcessingStep.GENERATING_TEXT_EMBEDDING -> "Generating Text Embeddings"
+                        ScannerManager.ProcessingStep.SAVING -> "Saving"
+                        ScannerManager.ProcessingStep.COMPLETE -> "Complete"
+                        ScannerManager.ProcessingStep.ERROR -> "Error"
+                    },
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                // Status message
+                Text(
+                    text = state.message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (state.step == ScannerManager.ProcessingStep.ERROR) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    }
+                )
+            }
+        },
+        confirmButton = {
+            if (state.step == ScannerManager.ProcessingStep.COMPLETE ||
+                state.step == ScannerManager.ProcessingStep.ERROR) {
+                TextButton(onClick = onDismiss) {
+                    Text("Close")
+                }
+            }
+        }
+    )
 }

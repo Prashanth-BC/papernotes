@@ -5,7 +5,7 @@
   "entities": [
     {
       "id": "1:3579691805702716355",
-      "lastPropertyId": "8:3325574917831736585",
+      "lastPropertyId": "14:5903785663411807086",
       "name": "NoteEntity",
       "properties": [
         {
@@ -52,13 +52,51 @@
           "id": "8:3325574917831736585",
           "name": "collection",
           "type": 9
+        },
+        {
+          "id": "9:5061049249220785448",
+          "name": "trocrEmbedding",
+          "indexId": "3:2087009600485664381",
+          "type": 28,
+          "flags": 8
+        },
+        {
+          "id": "10:655337262983677655",
+          "name": "mlKitText",
+          "type": 9
+        },
+        {
+          "id": "11:1346746833826708316",
+          "name": "colorBasedText",
+          "type": 9
+        },
+        {
+          "id": "12:4170775705170050832",
+          "name": "mlKitTextEmbedding",
+          "indexId": "4:5513970238577374129",
+          "type": 28,
+          "flags": 8
+        },
+        {
+          "id": "13:2506590734301252610",
+          "name": "colorBasedTextEmbedding",
+          "indexId": "5:5968280931211293221",
+          "type": 28,
+          "flags": 8
+        },
+        {
+          "id": "14:5903785663411807086",
+          "name": "clipEmbedding",
+          "indexId": "6:1182837867078091953",
+          "type": 28,
+          "flags": 8
         }
       ],
       "relations": []
     }
   ],
   "lastEntityId": "1:3579691805702716355",
-  "lastIndexId": "2:5319337271160766909",
+  "lastIndexId": "6:1182837867078091953",
   "lastRelationId": "0:0",
   "lastSequenceId": "0:0",
   "modelVersion": 5,

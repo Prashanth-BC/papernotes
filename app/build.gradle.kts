@@ -22,9 +22,7 @@ android {
         }
 
         ndk {
-            // MediaPipe tasks only support ARM architectures.
-            // This ensures that on x86 emulators (with ARM translation),
-            // the ARM native libraries are used.
+            // ONNX Runtime optimized for ARM architectures
             abiFilters.addAll(listOf("arm64-v8a"))
         }
 
@@ -88,17 +86,14 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
     
-    // ML Kit & MediaPipe
+    // ML Kit Document Scanner (for scanning documents)
     implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0")
-    implementation("com.google.mediapipe:tasks-vision:0.10.14")
+    
+    // ML Kit Text Recognition (for OCR)
     implementation("com.google.mlkit:text-recognition:16.0.1")
-    implementation("org.tensorflow:tensorflow-lite:2.16.1")
-    implementation("org.tensorflow:tensorflow-lite-select-tf-ops:2.16.1")
-    implementation("org.tensorflow:tensorflow-lite-gpu:2.16.1")
-    implementation("org.tensorflow:tensorflow-lite-gpu-api:2.16.1")
-
-    // TensorFlow Lite (kept for potential future use or other ML tasks)
-    // Note: MediaPipe tasks-text handles text embeddings now
+    
+    // Kotlinx Coroutines for Play Services (for ML Kit Task.await())
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
 
     // Navigation
     implementation("androidx.navigation:navigation-compose:2.9.6")
@@ -111,12 +106,29 @@ dependencies {
     // Explicitly adding processor just in case
     kapt("io.objectbox:objectbox-processor:5.0.1")
 
-    // Paddle OCR for Android - Built from source (forked from equationl/paddleocr4android)
-    // Includes Paddle Lite 2.14-rc with PP-OCRv4 support
-    implementation(files("libs/PaddleOCR4Android-release.aar"))
-    
-    // OpenCV for image preprocessing
+    // MediaPipe - Image embeddings (optimized for mobile)
+    implementation("com.google.mediapipe:tasks-vision:0.10.14")
+
+    // TensorFlow Lite - Text embeddings
+    implementation("org.tensorflow:tensorflow-lite:2.16.1")
+    implementation("org.tensorflow:tensorflow-lite-select-tf-ops:2.16.1")  // Required for SentencePiece tokenization
+    implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
+    implementation("org.tensorflow:tensorflow-lite-metadata:0.4.4")
+    implementation("org.tensorflow:tensorflow-lite-gpu:2.16.1")
+    implementation("org.tensorflow:tensorflow-lite-gpu-api:2.16.1")
+
+    // ONNX Runtime - OCR only
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.17.0")
+    implementation("com.microsoft.onnxruntime:onnxruntime-extensions-android:0.9.0")
+
+    // Gson for parsing tokenizer.json (WordPiece vocabulary)
+    implementation("com.google.code.gson:gson:2.10.1")
+
+    // OpenCV for image preprocessing in RapidOCR
     implementation("com.quickbirdstudios:opencv:4.5.3.0")
+    
+    // LEGACY: Paddle Lite based implementation (commented out for v5)
+    // implementation(files("libs/PaddleOCR4Android-release.aar"))
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
