@@ -5,7 +5,7 @@
   "entities": [
     {
       "id": "1:3579691805702716355",
-      "lastPropertyId": "13:2506590734301252610",
+      "lastPropertyId": "18:8294207162349074746",
       "name": "NoteEntity",
       "properties": [
         {
@@ -83,13 +83,157 @@
           "indexId": "5:5968280931211293221",
           "type": 28,
           "flags": 8
+        },
+        {
+          "id": "14:5903785663411807086",
+          "name": "clipEmbedding",
+          "indexId": "6:1182837867078091953",
+          "type": 28,
+          "flags": 8
+        },
+        {
+          "id": "15:6436496797314635709",
+          "name": "isPinned",
+          "type": 1
+        },
+        {
+          "id": "16:8421090487223925441",
+          "name": "isFavorite",
+          "type": 1
+        },
+        {
+          "id": "17:8167408240630640138",
+          "name": "pinnedAt",
+          "type": 6
+        },
+        {
+          "id": "18:8294207162349074746",
+          "name": "notebookId",
+          "type": 6
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "2:744475880930380833",
+      "lastPropertyId": "4:9047888772191205563",
+      "name": "NoteTagJoin",
+      "properties": [
+        {
+          "id": "1:9096250528277223375",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:7169729877475480357",
+          "name": "noteId",
+          "type": 6
+        },
+        {
+          "id": "3:4806637834790942492",
+          "name": "tagId",
+          "type": 6
+        },
+        {
+          "id": "4:9047888772191205563",
+          "name": "createdAt",
+          "type": 6
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "3:388195112968241547",
+      "lastPropertyId": "9:5519435494795077159",
+      "name": "NotebookEntity",
+      "properties": [
+        {
+          "id": "1:2687886460607155308",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:580859511195706224",
+          "name": "name",
+          "type": 9
+        },
+        {
+          "id": "3:1326256045578615367",
+          "name": "color",
+          "type": 5
+        },
+        {
+          "id": "4:5858424242236373014",
+          "name": "icon",
+          "type": 9
+        },
+        {
+          "id": "5:7484856614747073808",
+          "name": "parentNotebookId",
+          "type": 6
+        },
+        {
+          "id": "6:9104482611203254094",
+          "name": "displayOrder",
+          "type": 5
+        },
+        {
+          "id": "7:4056255450060725965",
+          "name": "createdAt",
+          "type": 6
+        },
+        {
+          "id": "8:1078987709354430228",
+          "name": "updatedAt",
+          "type": 6
+        },
+        {
+          "id": "9:5519435494795077159",
+          "name": "isDefault",
+          "type": 1
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "4:6389888377819724841",
+      "lastPropertyId": "5:6861283663906619025",
+      "name": "TagEntity",
+      "properties": [
+        {
+          "id": "1:121358416509071059",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:7775720798254777963",
+          "name": "name",
+          "type": 9
+        },
+        {
+          "id": "3:3366457173616927014",
+          "name": "color",
+          "type": 5
+        },
+        {
+          "id": "4:5625414491587256904",
+          "name": "createdAt",
+          "type": 6
+        },
+        {
+          "id": "5:6861283663906619025",
+          "name": "usageCount",
+          "type": 5
         }
       ],
       "relations": []
     }
   ],
-  "lastEntityId": "1:3579691805702716355",
-  "lastIndexId": "5:5968280931211293221",
+  "lastEntityId": "4:6389888377819724841",
+  "lastIndexId": "6:1182837867078091953",
   "lastRelationId": "0:0",
   "lastSequenceId": "0:0",
   "modelVersion": 5,

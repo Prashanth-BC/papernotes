@@ -58,14 +58,14 @@ fun CompactSearchPage(
 
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = Color(0xFF0D1117)
+        color = MaterialTheme.colorScheme.background
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             // Compact Header
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFF161B22))
+                    .background(MaterialTheme.colorScheme.surface)
                     .padding(12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
@@ -74,23 +74,22 @@ fun CompactSearchPage(
                     Icon(
                         imageVector = Icons.Default.ArrowBack,
                         contentDescription = "Back",
-                        tint = Color(0xFF8B949E)
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
                 Text(
                     text = "Search Results",
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 16.sp,
+                    style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF58A6FF)
+                    color = MaterialTheme.colorScheme.primary
                 )
 
                 IconButton(onClick = { showThresholdControls = !showThresholdControls }) {
                     Icon(
                         imageVector = Icons.Default.Search,
                         contentDescription = "Threshold Controls",
-                        tint = if (showThresholdControls) Color(0xFF58A6FF) else Color(0xFF8B949E)
+                        tint = if (showThresholdControls) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
@@ -100,15 +99,14 @@ fun CompactSearchPage(
             if (showThresholdControls) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    color = Color(0xFF161B22)
+                    color = MaterialTheme.colorScheme.surface
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
                             text = "Threshold Controls",
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 14.sp,
+                            style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF58A6FF)
+                            color = MaterialTheme.colorScheme.primary
                         )
                         Spacer(modifier = Modifier.height(12.dp))
 
@@ -120,7 +118,7 @@ fun CompactSearchPage(
                                 prefs.edit { putFloat("clip_threshold", it) }
                                 onThresholdsChanged(clipThreshold, trocrThreshold, mlkitThreshold, colorbasedThreshold)
                             },
-                            color = Color(0xFF3FB950)
+                            color = Color(0xFF4CAF50)  // Success green
                         )
 
                         ThresholdSlider(
@@ -131,7 +129,7 @@ fun CompactSearchPage(
                                 prefs.edit { putFloat("trocr_threshold", it) }
                                 onThresholdsChanged(clipThreshold, trocrThreshold, mlkitThreshold, colorbasedThreshold)
                             },
-                            color = Color(0xFF58A6FF)
+                            color = MaterialTheme.colorScheme.secondary
                         )
 
                         ThresholdSlider(
@@ -142,7 +140,7 @@ fun CompactSearchPage(
                                 prefs.edit { putFloat("mlkit_threshold", it) }
                                 onThresholdsChanged(clipThreshold, trocrThreshold, mlkitThreshold, colorbasedThreshold)
                             },
-                            color = Color(0xFFD29922)
+                            color = Color(0xFFFF9800)  // Warning orange
                         )
 
                         ThresholdSlider(
@@ -153,17 +151,17 @@ fun CompactSearchPage(
                                 prefs.edit { putFloat("colorbased_threshold", it) }
                                 onThresholdsChanged(clipThreshold, trocrThreshold, mlkitThreshold, colorbasedThreshold)
                             },
-                            color = Color(0xFFFF7B72)
+                            color = MaterialTheme.colorScheme.error
                         )
                     }
                 }
-                HorizontalDivider(color = Color(0xFF30363D))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline)
             }
 
             // Results Stats Bar
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = Color(0xFF0D1117)
+                color = MaterialTheme.colorScheme.surfaceVariant
             ) {
                 Row(
                     modifier = Modifier
@@ -173,15 +171,13 @@ fun CompactSearchPage(
                 ) {
                     Text(
                         text = "${filteredResults.size} matches",
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 12.sp,
-                        color = Color(0xFF8B949E)
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
                         text = "of ${searchResults.size} total",
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 12.sp,
-                        color = Color(0xFF6E7681)
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                     )
                 }
             }
@@ -202,16 +198,14 @@ fun CompactSearchPage(
                         ) {
                             Text(
                                 text = "No matches found",
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 14.sp,
-                                color = Color(0xFF6E7681)
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
                                 text = "Try adjusting the thresholds",
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 12.sp,
-                                color = Color(0xFF6E7681)
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                             )
                         }
                     }
@@ -245,14 +239,12 @@ fun ThresholdSlider(
         ) {
             Text(
                 text = label,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 12.sp,
-                color = Color(0xFF8B949E)
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
                 text = String.format("%.2f", value),
-                fontFamily = FontFamily.Monospace,
-                fontSize = 12.sp,
+                style = MaterialTheme.typography.labelMedium,
                 color = color,
                 fontWeight = FontWeight.Bold
             )
@@ -265,7 +257,7 @@ fun ThresholdSlider(
             colors = SliderDefaults.colors(
                 thumbColor = color,
                 activeTrackColor = color,
-                inactiveTrackColor = Color(0xFF30363D)
+                inactiveTrackColor = MaterialTheme.colorScheme.outline
             )
         )
     }
@@ -274,9 +266,10 @@ fun ThresholdSlider(
 @Composable
 fun CompactResultCard(result: ScannerManager.SearchResult) {
     Surface(
-        color = Color(0xFF161B22),
-        shape = MaterialTheme.shapes.small,
-        modifier = Modifier.fillMaxWidth()
+        color = MaterialTheme.colorScheme.surface,
+        shape = MaterialTheme.shapes.medium,
+        modifier = Modifier.fillMaxWidth(),
+        tonalElevation = 2.dp
     ) {
         Row(
             modifier = Modifier.padding(12.dp),
@@ -285,7 +278,7 @@ fun CompactResultCard(result: ScannerManager.SearchResult) {
             // Thumbnail
             Surface(
                 modifier = Modifier.size(80.dp),
-                color = Color(0xFF0D1117),
+                color = MaterialTheme.colorScheme.surfaceVariant,
                 shape = MaterialTheme.shapes.small
             ) {
                 AsyncImage(
@@ -310,17 +303,15 @@ fun CompactResultCard(result: ScannerManager.SearchResult) {
                 ) {
                     Text(
                         text = result.note.title,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 13.sp,
+                        style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFF58A6FF),
+                        color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.weight(1f)
                     )
                     Text(
                         text = String.format("%.3f", result.score),
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 12.sp,
-                        color = Color(0xFF3FB950),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color(0xFF4CAF50),  // Success green
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -333,16 +324,16 @@ fun CompactResultCard(result: ScannerManager.SearchResult) {
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     result.clipScore?.let {
-                        ScoreChip("C", it, Color(0xFF3FB950))
+                        ScoreChip("C", it, Color(0xFF4CAF50))  // Success green
                     }
                     result.trocrScore?.let {
-                        ScoreChip("T", it, Color(0xFF58A6FF))
+                        ScoreChip("T", it, MaterialTheme.colorScheme.secondary)
                     }
                     result.mlKitTextScore?.let {
-                        ScoreChip("M", it, Color(0xFFD29922))
+                        ScoreChip("M", it, Color(0xFFFF9800))  // Warning orange
                     }
                     result.colorBasedTextScore?.let {
-                        ScoreChip("H", it, Color(0xFFFF7B72))
+                        ScoreChip("H", it, MaterialTheme.colorScheme.error)
                     }
                 }
 
@@ -351,9 +342,8 @@ fun CompactResultCard(result: ScannerManager.SearchResult) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "\"${text.replace("\n", " ")}...\"",
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 10.sp,
-                        color = Color(0xFF6E7681),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                         maxLines = 2
                     )
                 }
@@ -365,26 +355,24 @@ fun CompactResultCard(result: ScannerManager.SearchResult) {
 @Composable
 fun ScoreChip(label: String, score: Double, color: Color) {
     Surface(
-        color = color.copy(alpha = 0.2f),
+        color = color.copy(alpha = 0.15f),
         shape = MaterialTheme.shapes.extraSmall,
-        modifier = Modifier.height(20.dp)
+        modifier = Modifier.height(22.dp)
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Text(
                 text = label,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 9.sp,
+                style = MaterialTheme.typography.labelSmall,
                 color = color,
                 fontWeight = FontWeight.Bold
             )
             Text(
                 text = String.format("%.2f", score),
-                fontFamily = FontFamily.Monospace,
-                fontSize = 9.sp,
+                style = MaterialTheme.typography.labelSmall,
                 color = color
             )
         }

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Subtle paper texture for notebook aesthetic -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+
+    <!-- Very subtle noise pattern to simulate paper grain -->
+    <gradient
+        android:type="radial"
+        android:centerX="0.5"
+        android:centerY="0.5"
+        android:gradientRadius="500"
+        android:startColor="#FFFFFEF7"
+        android:endColor="#FFF9F5ED" />
+
+    <!-- Rounded corners for dog-eared page effect -->
+    <corners android:radius="12dp" />
+
+    <!-- Very subtle border like paper edge -->
+    <stroke
+        android:width="0.5dp"
+        android:color="#FFE8E4DB" />
+</shape>

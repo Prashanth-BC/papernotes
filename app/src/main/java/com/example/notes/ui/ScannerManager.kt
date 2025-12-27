@@ -102,8 +102,28 @@ class ScannerManager(
             Log.d(TAG, "$name: ${if (ready) "✓ Ready" else "✗ Not Ready"}")
         }
         Log.d(TAG, "============================")
-        
+
         return status
+    }
+
+    /**
+     * Generate text embedding from text content.
+     * Used for text-only notes without images.
+     *
+     * @param text Text content to generate embedding for
+     * @return 384-dimensional text embedding (all-MiniLM-L6-v2) or null if failed
+     */
+    fun generateTextEmbedding(text: String): FloatArray? {
+        return if (text.isNotBlank()) {
+            try {
+                textEmbedder.embed(text)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error generating text embedding", e)
+                null
+            }
+        } else {
+            null
+        }
     }
     
     fun cleanup() {

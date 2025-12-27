@@ -51,7 +51,23 @@ data class NoteEntity(
     @HnswIndex(dimensions = 768, distanceType = VectorDistanceType.COSINE)
     var trocrEmbedding: FloatArray? = null,
 
-    var collection: String? = null
+    var collection: String? = null,  // Legacy field for backwards compatibility
+    var notebookId: Long? = null,    // New hierarchical notebook system
+
+    // Organization features
+    var isPinned: Boolean = false,
+    var isFavorite: Boolean = false,
+    var pinnedAt: Long? = null,  // Timestamp when pinned (for sorting)
+
+    // Note type and task management (Google Keep / OneNote inspired)
+    var noteType: String? = null,  // "NOTE" or "TASK" - nullable for backward compatibility
+    var color: Int? = null,  // Optional color for the note (Google Keep style)
+
+    // Task-specific fields
+    var taskCompletedCount: Int? = null,  // Number of completed tasks
+    var taskTotalCount: Int? = null,  // Total number of tasks
+    var taskDueDate: Long? = null,  // Optional due date for tasks
+    var isTaskCompleted: Boolean? = null  // Whether the entire task list is complete
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true

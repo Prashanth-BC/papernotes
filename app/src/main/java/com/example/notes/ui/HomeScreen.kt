@@ -4,6 +4,8 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -19,10 +21,14 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DriveFileMove
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.ImageSearch
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -30,12 +36,31 @@ import androidx.core.content.edit
 import com.example.notes.ml.ImageEmbedderHelper
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import com.example.notes.data.NoteEntity
 import com.example.notes.data.ObjectBoxStore
+import com.example.notes.data.TagRepository
+import com.example.notes.data.NotebookRepository
+import com.example.notes.ui.components.TagChip
+import androidx.compose.foundation.layout.FlowRow
+import com.example.notes.ui.components.NotebookNavigationDrawer
+import com.example.notes.ui.components.NoteFilterOption
+import com.example.notes.ui.components.NoteSortOption
+import com.example.notes.ui.components.SortFilterBottomSheet
+import com.example.notes.ui.components.MainBottomNavigation
+import com.example.notes.ui.components.MainNavSection
+import com.example.notes.ui.components.SwipeableNoteCard
+import com.example.notes.ui.components.AdaptiveNoteGrid
+import com.example.notes.ui.components.GridLayoutStyle
+import com.example.notes.ui.components.QuickAddSheet
+import com.example.notes.ui.components.QuickTextNoteDialog
+import com.example.notes.ui.components.NotebookManagementSheet
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
 import coil.compose.AsyncImage
@@ -77,6 +102,22 @@ fun HomeScreen() {
     var searchResults by remember { mutableStateOf(emptyList<ScannerManager.SearchResult>()) }
     var isSearching by remember { mutableStateOf(false) }
 
+    // Navigation Drawer state
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+
+    // Navigation state
+    var currentSection by remember { mutableStateOf(MainNavSection.LIBRARY) }
+
+    // Sort & Filter state
+    var showSortFilter by remember { mutableStateOf(false) }
+    var currentSort by remember { mutableStateOf(NoteSortOption.DATE_NEWEST) }
+    var currentFilters by remember { mutableStateOf(setOf(NoteFilterOption.ALL)) }
+
+    // Quick Add Sheet state
+    var showQuickAdd by remember { mutableStateOf(false) }
+    var showQuickTextNote by remember { mutableStateOf(false) }
+    var showNotebookManagement by remember { mutableStateOf(false) }
+
     // Progress state
     var showProgress by remember { mutableStateOf(false) }
     var processingState by remember { mutableStateOf(ScannerManager.ProcessingState()) }
@@ -88,7 +129,17 @@ fun HomeScreen() {
         notes = box.all
     }
 
+    // Initialize repositories and perform one-time migration
     LaunchedEffect(Unit) {
+        val notebookRepository = NotebookRepository()
+
+        // Ensure default notebook exists
+        notebookRepository.ensureDefaultNotebook()
+
+        // Migrate old collections to new notebook system (idempotent - safe to run multiple times)
+        notebookRepository.migrateCollectionsToNotebooks()
+
+        // Refresh notes after migration
         refreshNotes()
     }
 
@@ -105,8 +156,10 @@ fun HomeScreen() {
         }
     }
     var selectedCollection by remember { mutableStateOf<String?>("Scratchpad") }
+    var selectedNotebookId by remember { mutableStateOf<Long?>(null) }
     var showAddCollectionDialog by remember { mutableStateOf(false) }
     var newCollectionName by remember { mutableStateOf("") }
+    val notebookRepository = remember { NotebookRepository() }
     
     // Smart Scan State
     var showDuplicateDialog by remember { mutableStateOf(false) }
@@ -117,10 +170,45 @@ fun HomeScreen() {
     var selectedNoteForDetails by remember { mutableStateOf<NoteEntity?>(null) }
     
     // Filtered Notes
-    val filteredNotes by remember(notes, selectedCollection) {
+    val filteredNotes by remember(notes, selectedNotebookId, currentSort, currentFilters) {
         derivedStateOf {
-            if (selectedCollection == null) notes
-            else notes.filter { it.collection == selectedCollection }
+            // Filter by notebook
+            var result = if (selectedNotebookId == null) notes
+                        else notes.filter { it.notebookId == selectedNotebookId }
+
+            // Apply filters
+            if (currentFilters.isNotEmpty() && !currentFilters.contains(NoteFilterOption.ALL)) {
+                result = result.filter { note ->
+                    currentFilters.any { filter ->
+                        when (filter) {
+                            NoteFilterOption.ALL -> true
+                            NoteFilterOption.FAVORITES -> note.isFavorite
+                            NoteFilterOption.PINNED -> note.isPinned
+                            NoteFilterOption.HAS_TEXT -> !note.mlKitText.isNullOrBlank() || !note.colorBasedText.isNullOrBlank()
+                            NoteFilterOption.NO_TEXT -> note.mlKitText.isNullOrBlank() && note.colorBasedText.isNullOrBlank()
+                            NoteFilterOption.TASKS_ONLY -> note.noteType == "TASK"
+                            NoteFilterOption.NOTES_ONLY -> note.noteType != "TASK"
+                            NoteFilterOption.TASKS_INCOMPLETE -> note.noteType == "TASK" && note.isTaskCompleted != true
+                            NoteFilterOption.TASKS_COMPLETE -> note.noteType == "TASK" && note.isTaskCompleted == true
+                        }
+                    }
+                }
+            }
+
+            // Apply sorting
+            result = when (currentSort) {
+                NoteSortOption.DATE_NEWEST -> result.sortedByDescending { it.timestamp }
+                NoteSortOption.DATE_OLDEST -> result.sortedBy { it.timestamp }
+                NoteSortOption.TITLE_AZ -> result.sortedBy { it.title }
+                NoteSortOption.TITLE_ZA -> result.sortedByDescending { it.title }
+                NoteSortOption.PINNED_FIRST -> result.sortedWith(
+                    compareByDescending<NoteEntity> { it.isPinned }
+                        .thenByDescending { it.pinnedAt ?: 0 }
+                        .thenByDescending { it.timestamp }
+                )
+            }
+
+            result
         }
     }
 
@@ -161,6 +249,37 @@ fun HomeScreen() {
     }
 
     val scope = rememberCoroutineScope()
+
+    // Image picker launcher for gallery import
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            // Process imported image similar to scanned image
+            val targetCollection = selectedCollection ?: "Scratchpad"
+
+            scope.launch {
+                showProgress = true
+                progressTitle = "Processing Image"
+
+                scannerManager.processScanResult(
+                    uri = uri,
+                    onProgress = { state ->
+                        processingState = state
+                    },
+                    onWaitingForConfirmation = { },
+                    onComplete = { newNote ->
+                        val box = ObjectBoxStore.store.boxFor(NoteEntity::class.java)
+                        newNote.collection = targetCollection
+                        newNote.notebookId = selectedNotebookId
+                        box.put(newNote)
+                        refreshNotes()
+                        showProgress = false
+                    }
+                )
+            }
+        }
+    }
 
     val scannerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartIntentSenderForResult()
@@ -233,60 +352,26 @@ fun HomeScreen() {
         }
     }
 
-    // Dialogs that should always be available
+    // Note Details Screen
     if (selectedNoteForDetails != null) {
-        val note = selectedNoteForDetails!!
-        AlertDialog(
-            onDismissRequest = { selectedNoteForDetails = null },
-            title = { Text(note.title) },
-            text = {
-                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                    if (note.imagePath.isNotEmpty()) {
-                        AsyncImage(
-                            model = note.imagePath,
-                            contentDescription = "Note Image",
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 300.dp),
-                            contentScale = androidx.compose.ui.layout.ContentScale.Fit
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(16.dp))
-                    
-                    Text("Collection: ${note.collection ?: "Uncategorized"}", style = MaterialTheme.typography.labelMedium)
-                    val dateStr = java.text.SimpleDateFormat("MMM dd, yyyy HH:mm", java.util.Locale.getDefault()).format(java.util.Date(note.timestamp))
-                    Text("Date: $dateStr", style = MaterialTheme.typography.labelMedium)
-                    
-                    Divider(modifier = Modifier.padding(vertical = 8.dp))
-                    
-                    Text("OCR Text Content:", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
-                    if (!note.ocrText.isNullOrBlank()) {
-                            Text(
-                                note.ocrText!!, 
-                                style = MaterialTheme.typography.bodyMedium,
-                                modifier = Modifier.padding(top = 4.dp)
-                            )
-                    } else {
-                        Text(
-                            "No text detected.", 
-                            style = MaterialTheme.typography.bodyMedium, 
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
-                    }
-                    
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text("Debug Info:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                    Text("ID: ${note.id}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-                    Text("Image Embedding: ${if (note.embedding != null) "Yes (${note.embedding!!.size}-dim)" else "No"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-                    Text("TrOCR Embedding: ${if (note.trocrEmbedding != null) "Yes (${note.trocrEmbedding!!.size}-dim)" else "No"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-                    Text("ML Kit Text Embedding: ${if (note.mlKitTextEmbedding != null) "Yes (${note.mlKitTextEmbedding!!.size}-dim)" else "No"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-                    Text("ColorBased Text Embedding: ${if (note.colorBasedTextEmbedding != null) "Yes (${note.colorBasedTextEmbedding!!.size}-dim)" else "No"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+        NoteDetailsScreen(
+            note = selectedNoteForDetails!!,
+            onDismiss = { selectedNoteForDetails = null },
+            onSave = { updatedNote ->
+                scope.launch {
+                    val box = ObjectBoxStore.store.boxFor(NoteEntity::class.java)
+                    box.put(updatedNote)
+                    refreshNotes()
                 }
             },
-            confirmButton = {
-                TextButton(onClick = { selectedNoteForDetails = null }) {
-                    Text("Close")
+            onDelete = {
+                scope.launch {
+                    selectedNoteForDetails?.let { note ->
+                        val box = ObjectBoxStore.store.boxFor(NoteEntity::class.java)
+                        box.remove(note)
+                        refreshNotes()
+                    }
+                    selectedNoteForDetails = null
                 }
             }
         )
@@ -408,28 +493,59 @@ fun HomeScreen() {
                 )
             }
 
-            Scaffold(
-        topBar = {
-            if (!isSelectionMode) {
-                 TopAppBar(
-                    title = { Text("PaperNotes") },
-                    actions = {
-                        // Search Action
-                        IconButton(onClick = {
-                             isSearchMode = true
-                             val scanner = GmsDocumentScanning.getClient(scannerManager.options)
-                             scanner.getStartScanIntent(context as android.app.Activity)
-                                .addOnSuccessListener { intentSender ->
-                                    scannerLauncher.launch(IntentSenderRequest.Builder(intentSender).build())
+            // Navigation Drawer
+            ModalNavigationDrawer(
+                drawerState = drawerState,
+                drawerContent = {
+                    NotebookNavigationDrawer(
+                        selectedNotebookId = selectedNotebookId,
+                        notebookRepository = notebookRepository,
+                        onNotebookSelected = { notebookId ->
+                            selectedNotebookId = notebookId
+                            scope.launch { drawerState.close() }
+                        },
+                        onShowFavorites = {
+                            // Show only favorites
+                            selectedNotebookId = null
+                            // TODO: Add favorites filter flag
+                            scope.launch { drawerState.close() }
+                        },
+                        onShowAll = {
+                            selectedNotebookId = null
+                            scope.launch { drawerState.close() }
+                        },
+                        onAddNotebook = {
+                            showNotebookManagement = true
+                            scope.launch { drawerState.close() }
+                        },
+                        onSettingsClick = {
+                            showSettings = true
+                            scope.launch { drawerState.close() }
+                        }
+                    )
+                }
+            ) {
+                Scaffold(
+                    topBar = {
+                        if (!isSelectionMode) {
+                            TopAppBar(
+                                title = {
+                                    Text(
+                                        "Fusion Notes",
+                                        style = MaterialTheme.typography.headlineMedium
+                                    )
+                                },
+                                navigationIcon = {
+                                    IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                                        Icon(Icons.Default.Menu, contentDescription = "Open Notebooks")
+                                    }
+                                },
+                                actions = {
+                                    // Only keep filter - search and settings now in bottom nav
+                                    IconButton(onClick = { showSortFilter = true }) {
+                                        Icon(Icons.Default.FilterList, contentDescription = "Sort & Filter")
+                                    }
                                 }
-                                .addOnFailureListener { it.printStackTrace() }
-                        }) {
-                            Icon(Icons.Default.Search, contentDescription = "Search Note")
-                        }
-                        IconButton(onClick = { showSettings = true }) {
-                            Icon(Icons.Default.Settings, contentDescription = "Settings")
-                        }
-                    }
                 )
             } else {
                 TopAppBar(
@@ -460,25 +576,47 @@ fun HomeScreen() {
         floatingActionButton = {
             if (!isSelectionMode) {
                  ExtendedFloatingActionButton(
-                     onClick = {
-                        isSearchMode = false
-                        val scanner = GmsDocumentScanning.getClient(scannerManager.options)
-                        scanner.getStartScanIntent(context as android.app.Activity)
-                            .addOnSuccessListener { intentSender ->
-                                scannerLauncher.launch(IntentSenderRequest.Builder(intentSender).build())
-                            }
-                            .addOnFailureListener {
-                                // Handle error
-                                it.printStackTrace()
-                            }
-                     },
-                     icon = { Icon(Icons.Default.Add, "Scan") },
-                     text = { Text("Scan Note") }
+                     onClick = { showQuickAdd = true },
+                     icon = { Icon(Icons.Default.Add, "Add") },
+                     text = { Text("New") }
                  )
             }
+        },
+        bottomBar = {
+            MainBottomNavigation(
+                currentSection = currentSection,
+                onSectionSelected = { section ->
+                    when (section) {
+                        MainNavSection.LIBRARY -> {
+                            currentSection = section
+                            selectedNotebookId = null
+                        }
+                        MainNavSection.SEARCH -> {
+                            currentSection = section
+                            // Trigger search
+                            isSearchMode = true
+                            val scanner = GmsDocumentScanning.getClient(scannerManager.options)
+                            scanner.getStartScanIntent(context as android.app.Activity)
+                                .addOnSuccessListener { intentSender ->
+                                    scannerLauncher.launch(IntentSenderRequest.Builder(intentSender).build())
+                                }
+                                .addOnFailureListener { it.printStackTrace() }
+                        }
+                        MainNavSection.NOTEBOOKS -> {
+                            currentSection = section
+                            // Open drawer to show notebook hierarchy
+                            scope.launch { drawerState.open() }
+                        }
+                        MainNavSection.SETTINGS -> {
+                            currentSection = section
+                            showSettings = true
+                        }
+                    }
+                }
+            )
         }
     ) { padding ->
-        Column(modifier = Modifier.padding(padding).padding(16.dp)) {
+        Column(modifier = Modifier.padding(padding)) {
             
             if (showAddCollectionDialog && isSelectionMode) {
                 // Reuse logic or create specialized dialog for batch move
@@ -529,34 +667,8 @@ fun HomeScreen() {
                         }
                     }
                 )
-            } else if (!isSelectionMode) {
-                 Text("My Notes", style = MaterialTheme.typography.headlineMedium)
-            }
-            
-            // Collection Filter Row
-            if (!isSelectionMode) {
-                ScrollableTabRow(
-                    selectedTabIndex = if (selectedCollection == null) 0 else collections.indexOf(selectedCollection) + 1,
-                    edgePadding = 0.dp,
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
-                ) {
-                    Tab(
-                        selected = selectedCollection == null,
-                        onClick = { selectedCollection = null },
-                        text = { Text("All") }
-                    )
-                    collections.forEach { collection ->
-                        Tab(
-                            selected = selectedCollection == collection,
-                            onClick = { selectedCollection = collection },
-                            text = { Text(collection) }
-                        )
-                    }
-                }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
-            
             if (filteredNotes.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -580,42 +692,80 @@ fun HomeScreen() {
                     }
                 }
             } else {
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(filteredNotes) { note ->
+                // Google Keep style masonry layout
+                AdaptiveNoteGrid(
+                    notes = filteredNotes,
+                    layoutStyle = GridLayoutStyle.STAGGERED,
+                    modifier = Modifier.fillMaxSize()
+                ) { note ->
                         val isSelected = selectedNoteIds.contains(note.id)
-                        NoteCard(
-                            note = note,
-                            score = null,
-                            isSelected = isSelected,
-                            onDelete = {
+                        val haptic = LocalHapticFeedback.current
+
+                        SwipeableNoteCard(
+                            onSwipeToFavorite = {
+                                val box = ObjectBoxStore.store.boxFor(NoteEntity::class.java)
+                                note.isFavorite = !note.isFavorite
+                                box.put(note)
+                                refreshNotes()
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            },
+                            onSwipeToDelete = {
                                 val box = ObjectBoxStore.store.boxFor(NoteEntity::class.java)
                                 box.remove(note)
                                 refreshNotes()
-                            },
-                            onMoveToCollection = { newCol ->
-                                 val box = ObjectBoxStore.store.boxFor(NoteEntity::class.java)
-                                 note.collection = newCol
-                                 box.put(note)
-                                 refreshNotes()
-                            },
-                             onClick = {
-                                  if (isSelectionMode) {
-                                      toggleSelection(note.id)
-                                  } else {
-                                      selectedNoteForDetails = note
-                                  }
-                             },
-                            onLongClick = {
-                                 if (!isSelectionMode) {
-                                     enterSelectionMode(note.id)
-                                 }
-                            },
-                            availableCollections = collections
-                        )
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            }
+                        ) {
+                            NoteCard(
+                                note = note,
+                                score = null,
+                                isSelected = isSelected,
+                                onDelete = {
+                                    val box = ObjectBoxStore.store.boxFor(NoteEntity::class.java)
+                                    box.remove(note)
+                                    refreshNotes()
+                                },
+                                onMoveToCollection = { newCol ->
+                                     val box = ObjectBoxStore.store.boxFor(NoteEntity::class.java)
+                                     note.collection = newCol
+                                     box.put(note)
+                                     refreshNotes()
+                                },
+                                 onClick = {
+                                      if (isSelectionMode) {
+                                          haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                          toggleSelection(note.id)
+                                      } else {
+                                          selectedNoteForDetails = note
+                                      }
+                                 },
+                                onLongClick = {
+                                     if (!isSelectionMode) {
+                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                         enterSelectionMode(note.id)
+                                     }
+                                },
+                                onToggleFavorite = {
+                                    val box = ObjectBoxStore.store.boxFor(NoteEntity::class.java)
+                                    note.isFavorite = !note.isFavorite
+                                    box.put(note)
+                                    refreshNotes()
+                                },
+                                onTogglePin = {
+                                    val box = ObjectBoxStore.store.boxFor(NoteEntity::class.java)
+                                    note.isPinned = !note.isPinned
+                                    note.pinnedAt = if (note.isPinned) System.currentTimeMillis() else null
+                                    box.put(note)
+                                    refreshNotes()
+                                },
+                                onManageTags = {
+                                    // Open tag selector for this note
+                                    // This will be handled via note details screen for now
+                                    selectedNoteForDetails = note
+                                },
+                                availableCollections = collections
+                            )
+                        }
                     }
                 }
             }
@@ -643,13 +793,130 @@ fun HomeScreen() {
                 )
             }
         }
+
+        // Sort & Filter Bottom Sheet
+        if (showSortFilter) {
+        SortFilterBottomSheet(
+            currentSort = currentSort,
+            currentFilters = currentFilters,
+            onSortChanged = { newSort ->
+                currentSort = newSort
+            },
+            onFilterToggled = { filter ->
+                currentFilters = if (filter == NoteFilterOption.ALL) {
+                    setOf(NoteFilterOption.ALL)
+                } else {
+                    val newFilters = currentFilters.toMutableSet()
+                    if (newFilters.contains(filter)) {
+                        newFilters.remove(filter)
+                        if (newFilters.isEmpty()) newFilters.add(NoteFilterOption.ALL)
+                    } else {
+                        newFilters.remove(NoteFilterOption.ALL)
+                        newFilters.add(filter)
+                    }
+                    newFilters
+                }
+            },
+            onDismiss = { showSortFilter = false }
+        )
     }
+
+    // Quick Add Bottom Sheet (Google Keep style)
+    if (showQuickAdd) {
+        QuickAddSheet(
+            onScanNote = {
+                isSearchMode = false
+                val scanner = GmsDocumentScanning.getClient(scannerManager.options)
+                scanner.getStartScanIntent(context as android.app.Activity)
+                    .addOnSuccessListener { intentSender ->
+                        scannerLauncher.launch(IntentSenderRequest.Builder(intentSender).build())
+                    }
+                    .addOnFailureListener { it.printStackTrace() }
+            },
+            onImportImage = {
+                imagePickerLauncher.launch("image/*")
+            },
+            onQuickNote = {
+                showQuickTextNote = true
+            },
+            onQuickTask = {
+                // TODO: Implement quick task list
+            },
+            onDismiss = { showQuickAdd = false }
+        )
+    }
+
+    // Quick Text Note Dialog
+    if (showQuickTextNote) {
+        QuickTextNoteDialog(
+            currentNotebookId = selectedNotebookId,
+            onDismiss = { showQuickTextNote = false },
+            onSave = { title, content, color, notebookId, tagIds ->
+                // Create a text-only note
+                scope.launch {
+                    try {
+                        showProgress = true
+                        progressTitle = "Saving Note"
+
+                        val note = NoteEntity(
+                            title = title,
+                            imagePath = "",  // No image for text notes
+                            timestamp = System.currentTimeMillis(),
+                            mlKitText = content,  // Store text content
+                            collection = selectedCollection ?: "Scratchpad",
+                            notebookId = notebookId,
+                            color = color  // Note color
+                        )
+
+                        // Generate text embedding if content is not empty
+                        if (content.isNotBlank()) {
+                            val textEmbedding = scannerManager.generateTextEmbedding(content)
+                            note.mlKitTextEmbedding = textEmbedding
+                            note.textEmbedding = textEmbedding
+                        }
+
+                        val box = ObjectBoxStore.store.boxFor(NoteEntity::class.java)
+                        val noteId = box.put(note)
+
+                        // Add tags to the note
+                        if (tagIds.isNotEmpty()) {
+                            val tagRepository = TagRepository()
+                            tagIds.forEach { tagId ->
+                                tagRepository.addTagToNote(noteId, tagId)
+                            }
+                        }
+
+                        // Refresh notes list
+                        refreshNotes()
+
+                        showProgress = false
+                        showQuickTextNote = false
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        showProgress = false
+                    }
+                }
+            }
+        )
+    }
+
+    // Notebook Management Sheet
+    if (showNotebookManagement) {
+        NotebookManagementSheet(
+            onDismiss = { showNotebookManagement = false },
+            onNotebookSelected = { notebook ->
+                selectedNotebookId = notebook.id
+                refreshNotes()
+            }
+        )
+    }
+    }  // Close ModalNavigationDrawer
 }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun NoteCard(
-    note: NoteEntity, 
+    note: NoteEntity,
     score: Double? = null,
     imageScore: Double? = null,
     trocrScore: Double? = null,
@@ -660,7 +927,11 @@ fun NoteCard(
     onMoveToCollection: ((String) -> Unit)? = null,
     onClick: () -> Unit = {},
     onLongClick: () -> Unit = {},
-    availableCollections: List<String> = emptyList()
+    availableCollections: List<String> = emptyList(),
+    onToggleFavorite: (() -> Unit)? = null,
+    onTogglePin: (() -> Unit)? = null,
+    onManageTags: (() -> Unit)? = null,
+    modifier: Modifier = Modifier
 ) {
     var showMenu by remember { mutableStateOf(false) }
     var showCollectionDialog by remember { mutableStateOf(false) }
@@ -707,13 +978,23 @@ fun NoteCard(
     }
 
     ElevatedCard(
-        modifier = Modifier.combinedClickable(
-            onClick = onClick,
-            onLongClick = onLongClick
-        ),
-        colors = if (isSelected) CardDefaults.elevatedCardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer
-        ) else CardDefaults.elevatedCardColors(),
+        modifier = modifier
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            ),
+        colors = if (isSelected) {
+            CardDefaults.elevatedCardColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer
+            )
+        } else if (note.color != null) {
+            // Google Keep style: apply note color
+            CardDefaults.elevatedCardColors(
+                containerColor = androidx.compose.ui.graphics.Color(note.color!!).copy(alpha = 0.15f)
+            )
+        } else {
+            CardDefaults.elevatedCardColors()
+        },
         elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp)
     ) {
         Column {
@@ -735,23 +1016,41 @@ fun NoteCard(
                     verticalAlignment = Alignment.Top
                 ) {
                    Text(
-                       note.title, 
-                       style = MaterialTheme.typography.titleMedium, 
+                       note.title,
+                       style = MaterialTheme.typography.titleMedium,
                        maxLines = 1,
                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                        modifier = Modifier.weight(1f).padding(end = 4.dp)
                    )
-                   
-                   if (onMoveToCollection != null) {
-                       IconButton(
-                           onClick = { showCollectionDialog = true },
-                           modifier = Modifier.size(20.dp)
-                       ) {
-                           Icon(
-                               Icons.Default.FolderOpen, 
-                               contentDescription = "Move",
-                               tint = MaterialTheme.colorScheme.onSurfaceVariant
-                           )
+
+                   Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                       // Favorite Icon
+                       if (onToggleFavorite != null) {
+                           IconButton(
+                               onClick = onToggleFavorite,
+                               modifier = Modifier.size(24.dp)
+                           ) {
+                               Icon(
+                                   if (note.isFavorite) Icons.Default.Star else Icons.Default.Star,
+                                   contentDescription = if (note.isFavorite) "Remove from favorites" else "Add to favorites",
+                                   tint = if (note.isFavorite) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                   modifier = Modifier.size(18.dp)
+                               )
+                           }
+                       }
+
+                       if (onMoveToCollection != null) {
+                           IconButton(
+                               onClick = { showCollectionDialog = true },
+                               modifier = Modifier.size(24.dp)
+                           ) {
+                               Icon(
+                                   Icons.Default.FolderOpen,
+                                   contentDescription = "Move",
+                                   tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                   modifier = Modifier.size(18.dp)
+                               )
+                           }
                        }
                    }
                 }
@@ -766,6 +1065,29 @@ fun NoteCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
+                // Task Progress (Google Keep style)
+                val totalTasks = note.taskTotalCount ?: 0
+                val completedTasks = note.taskCompletedCount ?: 0
+                if (note.noteType == "TASK" && totalTasks > 0) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        LinearProgressIndicator(
+                            progress = { completedTasks.toFloat() / totalTasks.toFloat() },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(4.dp),
+                        )
+                        Text(
+                            text = "$completedTasks/$totalTasks",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
                 if (note.collection != null) {
                     Spacer(modifier = Modifier.height(8.dp))
                     SuggestionChip(
@@ -777,6 +1099,35 @@ fun NoteCard(
                             labelColor = MaterialTheme.colorScheme.onSecondaryContainer
                         )
                     )
+                }
+
+                // Display tags
+                if (onManageTags != null) {
+                    val tagRepository = remember { TagRepository() }
+                    val noteTags = remember(note.id) { tagRepository.getTagsForNote(note.id) }
+
+                    if (noteTags.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            noteTags.take(3).forEach { tag ->  // Show max 3 tags on card
+                                TagChip(
+                                    tag = tag,
+                                    onClick = onManageTags
+                                )
+                            }
+                            if (noteTags.size > 3) {
+                                SuggestionChip(
+                                    onClick = onManageTags,
+                                    label = { Text("+${noteTags.size - 3}", style = MaterialTheme.typography.labelSmall) },
+                                    modifier = Modifier.height(24.dp)
+                                )
+                            }
+                        }
+                    }
                 }
 
                 if (score != null) {
