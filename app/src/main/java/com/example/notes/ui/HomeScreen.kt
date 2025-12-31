@@ -41,8 +41,11 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.example.notes.data.NoteEntity
 import com.example.notes.data.ObjectBoxStore
 import com.example.notes.data.TagRepository
@@ -483,6 +486,112 @@ fun HomeScreen() {
                                     prefs.edit { putFloat("colorbased_threshold", it) }
                                 }
                             )
+
+                            Spacer(modifier = Modifier.height(16.dp))
+                            HorizontalDivider()
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            // Regenerate Embeddings Section
+                            Text(
+                                "Maintenance",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                "Fix missing embeddings for existing notes",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(bottom = 12.dp)
+                            )
+
+                            var isRegenerating by remember { mutableStateOf(false) }
+                            var regenerationStatus by remember { mutableStateOf("") }
+
+                            Button(
+                                onClick = {
+                                    isRegenerating = true
+                                    regenerationStatus = "Checking notes..."
+                                    scope.launch(Dispatchers.IO) {
+                                        try {
+                                            val box = ObjectBoxStore.store.boxFor(NoteEntity::class.java)
+                                            val allNotes = box.all
+                                            val notesWithoutTrOCR = allNotes.filter { it.trocrEmbedding == null && it.imagePath.isNotEmpty() }
+
+                                            withContext(Dispatchers.Main) {
+                                                regenerationStatus = "Found ${notesWithoutTrOCR.size} notes missing TrOCR embeddings"
+                                            }
+
+                                            if (notesWithoutTrOCR.isNotEmpty()) {
+                                                notesWithoutTrOCR.forEachIndexed { index, note ->
+                                                    withContext(Dispatchers.Main) {
+                                                        regenerationStatus = "Processing ${index + 1}/${notesWithoutTrOCR.size}: ${note.title}"
+                                                    }
+
+                                                    try {
+                                                        // Load the bitmap
+                                                        val bitmap = android.graphics.BitmapFactory.decodeFile(note.imagePath)
+                                                        if (bitmap != null) {
+                                                            // Generate TrOCR embedding
+                                                            val trocrResult = scannerManager.generateTrOCREmbedding(bitmap)
+                                                            if (trocrResult != null) {
+                                                                note.trocrEmbedding = trocrResult
+                                                                box.put(note)
+                                                                android.util.Log.d("HomeScreen", "Regenerated TrOCR for note ${note.id}: ${note.title}")
+                                                            }
+                                                            bitmap.recycle()
+                                                        }
+                                                    } catch (e: Exception) {
+                                                        android.util.Log.e("HomeScreen", "Failed to regenerate TrOCR for note ${note.id}", e)
+                                                    }
+                                                }
+
+                                                withContext(Dispatchers.Main) {
+                                                    regenerationStatus = "✓ Successfully regenerated ${notesWithoutTrOCR.size} embeddings"
+                                                    refreshNotes()
+                                                }
+                                            } else {
+                                                withContext(Dispatchers.Main) {
+                                                    regenerationStatus = "✓ All notes have TrOCR embeddings"
+                                                }
+                                            }
+                                        } catch (e: Exception) {
+                                            withContext(Dispatchers.Main) {
+                                                regenerationStatus = "✗ Error: ${e.message}"
+                                            }
+                                            android.util.Log.e("HomeScreen", "Error regenerating embeddings", e)
+                                        } finally {
+                                            withContext(Dispatchers.Main) {
+                                                isRegenerating = false
+                                            }
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = !isRegenerating
+                            ) {
+                                if (isRegenerating) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp,
+                                        color = MaterialTheme.colorScheme.onPrimary
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                }
+                                Text(if (isRegenerating) "Processing..." else "Regenerate Missing TrOCR Embeddings")
+                            }
+
+                            if (regenerationStatus.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = regenerationStatus,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = when {
+                                        regenerationStatus.startsWith("✓") -> Color(0xFF4CAF50)
+                                        regenerationStatus.startsWith("✗") -> MaterialTheme.colorScheme.error
+                                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                    }
+                                )
+                            }
                         }
                     },
                     confirmButton = {

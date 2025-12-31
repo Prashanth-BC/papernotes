@@ -125,7 +125,23 @@ class ScannerManager(
             null
         }
     }
-    
+
+    /**
+     * Generate TrOCR visual embedding for a bitmap image.
+     * Public function for regenerating missing embeddings.
+     *
+     * @param bitmap Image to generate embedding for
+     * @return 768-dimensional TrOCR embedding or null if failed
+     */
+    fun generateTrOCREmbedding(bitmap: android.graphics.Bitmap): FloatArray? {
+        return try {
+            trocrEncoder.embedCLS(bitmap)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error generating TrOCR embedding", e)
+            null
+        }
+    }
+
     fun cleanup() {
         mlKitOCR.release()
         colorBasedOCR.release()
